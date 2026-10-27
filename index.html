@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Syndicate Wars</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#14151A; --panel:#1B1D24; --panel-2:#22242C; --line:#2D2F38;
+    --text:#EDEAE3; --text-dim:#8C8E98;
+    --mafia:#8B1538; --mafia-2:#B01E45; --mafia-deep:#3A0A18;
+    --police:#1F5FA8; --police-2:#3679C9; --police-deep:#0B2A4A;
+    --gold:#C9A227; --danger:#E04848;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:'Inter',system-ui,sans-serif;
+    display:flex; flex-direction:column; align-items:center;
+    min-height:100%; padding:12px 12px 20px; overflow-x:hidden;
+    user-select:none; -webkit-user-select:none;
+  }
+  button{font-family:inherit;}
+
+  /* ---------- Шапка ---------- */
+  .topbar{width:100%; max-width:420px; display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;}
+  .wordmark{font-family:'Bebas Neue',sans-serif; font-size:26px; letter-spacing:1px; line-height:.95;}
+  .wordmark .m{color:var(--mafia-2);} .wordmark .p{color:var(--police-2);}
+  .wordmark .vs{color:var(--text-dim); font-family:'Inter',sans-serif; font-size:13px; margin:0 3px;}
+  .wordmark small{display:block; font-size:15px; color:var(--gold); letter-spacing:2px;}
+  .stats{display:flex; gap:14px; text-align:right;}
+  .stat .label{font-size:11px; color:var(--text-dim);}
+  .stat .value{font-family:'Bebas Neue',sans-serif; font-size:24px; line-height:1;}
+  .stat.score .value{color:var(--gold);}
+  .stat.coins .value{color:#7FD39B;}
+
+  /* ---------- Рука: текущий предмет, запас, следующий ---------- */
+  .hand{width:100%; max-width:380px; display:grid; grid-template-columns:1.35fr 1fr 1fr 1fr; gap:8px; margin-bottom:10px;}
+  .slot{
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:6px 4px 7px; display:flex; flex-direction:column; align-items:center; gap:3px;
+    color:var(--text); min-width:0;
+  }
+  .slot-label{font-size:11px; color:var(--text-dim);}
+  .slot-item{width:46px; height:46px; display:flex; align-items:center; justify-content:center;}
+  .slot.current{border-color:var(--gold); background:linear-gradient(180deg,#26241B,var(--panel));}
+  .slot.current .slot-item{width:58px; height:58px;}
+  .slot-name{font-size:11px; font-weight:700; text-align:center; line-height:1.15; min-height:13px; padding:0 2px;}
+  .slot.next .slot-item{opacity:.75;}
+  button.slot{cursor:pointer;}
+  button.slot:active{transform:translateY(1px);}
+  .slot.stash.empty .slot-item::after{content:'+'; color:var(--text-dim); font-size:22px;}
+  .shop-slot{border-color:#2E6B47; cursor:pointer;}
+  .shop-slot .slot-item{font-size:26px;}
+
+  /* ---------- Путь к вершине ---------- */
+  .track{width:100%; max-width:380px; display:flex; align-items:center; gap:8px; margin-bottom:10px;}
+  .track-label{font-size:12px; color:var(--text-dim); white-space:nowrap;}
+  .track-steps{flex:1; display:flex; justify-content:space-between; align-items:center;}
+  .track-step{width:30px; height:30px; opacity:.28; filter:grayscale(1); transition:opacity .3s, filter .3s;}
+  .track-step.done{opacity:1; filter:none;}
+  .track-step .tile{width:100%; height:100%;}
+  .track-sep{flex:1; height:2px; background:var(--line); margin:0 2px;}
+  .track-sep.done{background:var(--gold);}
+
+  /* ---------- Поле ---------- */
+  .board-wrap{position:relative; width:100%; max-width:380px;}
+  .board{
+    display:grid; grid-template-columns:repeat(6,1fr); gap:5px;
+    background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:6px;
+    touch-action:manipulation;
+  }
+  .cell{position:relative; aspect-ratio:1; background:var(--panel-2); border-radius:8px; display:flex; align-items:center; justify-content:center; cursor:pointer;}
+  .cell.hint::after{content:''; position:absolute; inset:3px; border:2px dashed rgba(201,162,39,.55); border-radius:7px; pointer-events:none;}
+  .cell.raid-target{box-shadow:inset 0 0 0 2px rgba(224,72,72,.55);}
+  .cell.deny{animation:deny .25s;}
+  @keyframes deny{0%,100%{transform:translateX(0);}30%{transform:translateX(-3px);}70%{transform:translateX(3px);}}
+
+  /* ---------- Фигуры ---------- */
+  .tile{position:relative; width:88%; height:88%; display:flex; align-items:center; justify-content:center;}
+  .tile svg, .tile img{width:100%; height:100%; display:block;}
+  .tile.portrait{border-radius:50%; overflow:visible;}
+  .tile.portrait .face{position:absolute; inset:0; border-radius:50%; overflow:hidden; border:2px solid transparent;}
+  .tile.portrait .face img{object-fit:cover;}
+  .tile.mafia .face{background:radial-gradient(circle at 35% 30%, var(--mafia-2), var(--mafia-deep)); border-color:#5A0F27;}
+  .tile.police .face{background:radial-gradient(circle at 35% 30%, var(--police-2), var(--police-deep)); border-color:#0E3660;}
+  .tile.tier-2 .face{box-shadow:0 0 10px rgba(201,162,39,.35); border-color:#8A6C15;}
+  .tile.tier-3 .face{box-shadow:0 0 16px rgba(201,162,39,.7); border-color:var(--gold);}
+  .tile .rank{
+    position:absolute; bottom:-3px; right:-3px; z-index:2;
+    background:var(--gold); color:#1A1400; font-family:'Bebas Neue',sans-serif;
+    font-size:11px; line-height:1; padding:2px 4px; border-radius:6px;
+  }
+  .tile.enemy .face{border-color:var(--danger); box-shadow:0 0 0 2px rgba(224,72,72,.35);}
+  .tile.enemy .enemy-mark{
+    position:absolute; top:-3px; left:-3px; z-index:2;
+    width:16px; height:16px; border-radius:50%; background:var(--danger); color:#fff;
+    font-size:11px; font-weight:800; display:flex; align-items:center; justify-content:center;
+  }
+  .tile.item svg{filter:drop-shadow(0 2px 2px rgba(0,0,0,.45));}
+
+  /* ---------- Анимации ---------- */
+  @keyframes pop{0%{transform:scale(.5);}65%{transform:scale(1.16);}100%{transform:scale(1);}}
+  .tile.pop{animation:pop .26s ease-out;}
+  @keyframes mergeFly{to{transform:translate(var(--dx),var(--dy)) scale(.25); opacity:0;}}
+  .tile.merge-fly{animation:mergeFly .22s ease-in forwards; z-index:4;}
+  @keyframes levelUp{0%{transform:scale(.4); filter:brightness(2);}55%{transform:scale(1.25); filter:brightness(1.4);}100%{transform:scale(1); filter:brightness(1);}}
+  .tile.level-up{animation:levelUp .38s ease-out;}
+  @keyframes captured{0%{transform:rotate(0) scale(1);}25%{transform:rotate(-12deg) scale(1.05);}50%{transform:rotate(12deg);}100%{transform:scale(.3) rotate(0); opacity:0; filter:grayscale(1);}}
+  .tile.captured{animation:captured .42s ease-in forwards;}
+  @keyframes removed{to{transform:scale(0) rotate(90deg); opacity:0;}}
+  .tile.removed{animation:removed .25s ease-in forwards;}
+
+  .float-text{
+    position:absolute; transform:translate(-50%,0); pointer-events:none; z-index:6; white-space:nowrap;
+    font-family:'Bebas Neue',sans-serif; font-size:20px; text-shadow:0 2px 4px rgba(0,0,0,.75);
+    animation:floatUp .95s ease-out forwards;
+  }
+  @keyframes floatUp{
+    0%{opacity:0; transform:translate(-50%,0) scale(.8);}
+    15%{opacity:1; transform:translate(-50%,-6px) scale(1.05);}
+    100%{opacity:0; transform:translate(-50%,-48px);}
+  }
+  .toast{
+    position:absolute; left:50%; top:42%; transform:translate(-50%,-50%);
+    background:rgba(20,21,26,.92); border:1px solid var(--gold); color:var(--gold);
+    font-family:'Bebas Neue',sans-serif; font-size:24px; letter-spacing:1px;
+    padding:8px 16px; border-radius:10px; pointer-events:none; z-index:7;
+    animation:toast 1.3s ease-out forwards; white-space:nowrap;
+  }
+  @keyframes toast{0%{opacity:0; transform:translate(-50%,-30%) scale(.9);}15%{opacity:1; transform:translate(-50%,-50%) scale(1);}80%{opacity:1;}100%{opacity:0;}}
+
+  .footer-row{width:100%; max-width:380px; display:flex; justify-content:space-between; align-items:center; margin-top:12px;}
+  .btn-text{background:none; border:none; color:var(--text-dim); font-size:13px; padding:6px; cursor:pointer; text-decoration:underline;}
+  .turn-info{font-size:12px; color:var(--text-dim);}
+
+  /* ---------- Оверлеи ---------- */
+  .overlay{position:fixed; inset:0; background:rgba(10,10,12,.9); display:none; align-items:center; justify-content:center; padding:16px; z-index:10; overflow-y:auto;}
+  .overlay.show{display:flex;}
+  .card{position:relative; background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:22px 18px; max-width:340px; width:100%; text-align:center;}
+  .card h2{font-family:'Bebas Neue',sans-serif; font-size:28px; letter-spacing:1px; margin:0 0 6px; color:var(--gold); line-height:1.05;}
+  .card h2.mafia{color:var(--mafia-2);} .card h2.police{color:var(--police-2);}
+  .card p{color:var(--text-dim); font-size:14px; line-height:1.5; margin:0 0 14px;}
+  .btn-primary{
+    width:100%; border:none; border-radius:12px; padding:13px 10px; font-weight:700; font-size:15px; cursor:pointer;
+    color:#1A1400; background:linear-gradient(180deg,#E0BC3F,var(--gold)); box-shadow:0 3px 0 #8A6C15;
+  }
+  .btn-primary:active{transform:translateY(2px); box-shadow:0 1px 0 #8A6C15;}
+  .btn-ghost{width:100%; margin-top:8px; border:1px solid var(--line); background:var(--panel-2); color:var(--text); border-radius:12px; padding:11px; font-weight:600; font-size:14px; cursor:pointer;}
+  .close-btn{position:absolute; top:10px; right:10px; width:30px; height:30px; border-radius:50%; border:1px solid var(--line); background:var(--panel-2); color:var(--text-dim); font-size:14px; cursor:pointer;}
+
+  /* Меню */
+  .menu-logo{font-family:'Bebas Neue',sans-serif; font-size:clamp(28px, 9.5vw, 44px); white-space:nowrap; line-height:.9; letter-spacing:1px; margin-bottom:2px;}
+  .menu-logo .m{color:var(--mafia-2);} .menu-logo .p{color:var(--police-2);}
+  .menu-logo .vs{font-family:'Inter',sans-serif; font-size:18px; color:var(--text-dim); margin:0 4px;}
+  .menu-sub{font-family:'Bebas Neue',sans-serif; color:var(--gold); font-size:22px; letter-spacing:3px; margin-bottom:14px;}
+  .sides{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px;}
+  .side{border-radius:14px; padding:12px 8px 10px; cursor:pointer; border:2px solid transparent; color:var(--text); display:flex; flex-direction:column; align-items:center; gap:6px;}
+  .side.mafia{background:linear-gradient(180deg,#4A0F22,#24090F); border-color:var(--mafia);}
+  .side.police{background:linear-gradient(180deg,#123A63,#0A1A2C); border-color:var(--police);}
+  .side:active{transform:scale(.98);}
+  .side .pic{width:84px; height:84px;}
+  .side .pic .tile{width:100%; height:100%;}
+  .side b{font-size:16px;}
+  .side span{font-size:11.5px; color:#C9C6BE; line-height:1.3;}
+  .rules{text-align:left; background:var(--panel-2); border-radius:12px; padding:10px 12px; margin-bottom:12px;}
+  .rules div{font-size:13px; line-height:1.45; color:#C9C6BE; display:flex; gap:8px; margin:3px 0;}
+  .rules div b{color:var(--gold); min-width:14px;}
+  .record{font-size:12.5px; color:var(--text-dim);}
+
+  /* Магазин */
+  .shop-list{display:flex; flex-direction:column; gap:8px; text-align:left;}
+  .shop-row{display:flex; align-items:center; gap:10px; background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:8px 10px;}
+  .shop-row .slot-item{width:42px; height:42px; flex-shrink:0;}
+  .shop-info{flex:1; min-width:0;}
+  .shop-name{font-size:14px; font-weight:700;}
+  .shop-desc{font-size:12px; color:var(--text-dim); line-height:1.3;}
+  .shop-buy{border:none; border-radius:8px; background:#7FD39B; color:#0E2A18; font-weight:800; font-size:13px; padding:9px 10px; cursor:pointer; white-space:nowrap;}
+  .shop-buy:disabled{background:var(--panel); color:var(--text-dim); cursor:not-allowed;}
+
+  /* Итоги */
+  .result-hero{width:104px; height:104px; margin:4px auto 10px;}
+  .result-hero .tile{width:100%; height:100%;}
+  .result-grid{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:14px;}
+  .result-grid div{background:var(--panel-2); border-radius:10px; padding:8px;}
+  .result-grid small{display:block; font-size:11.5px; color:var(--text-dim);}
+  .result-grid b{font-family:'Bebas Neue',sans-serif; font-size:24px; font-weight:400; color:var(--text);}
+  .result-grid .rec b{color:var(--gold);}
+
+  /* Фоновые арты (подключаются после загрузки) */
+  #menuOverlay.has-art{background:linear-gradient(180deg,rgba(10,10,12,.45),rgba(10,10,12,.8)), var(--menu-art) center/cover no-repeat;}
+  #menuOverlay.has-art .card{background:rgba(27,29,36,.86); backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px);}
+  .board.has-art{background:linear-gradient(rgba(20,21,26,.3),rgba(20,21,26,.3)), var(--board-art) center/cover no-repeat;}
+  .board.has-art .cell{background:rgba(34,36,44,.68);}
+
+  @media (prefers-reduced-motion: reduce){
+    .tile.pop,.tile.level-up,.tile.merge-fly,.tile.captured,.tile.removed,.float-text,.toast{animation-duration:.01s !important;}
+  }
+</style>
+</head>
+<body>
+
+  <div class="topbar">
+    <div class="wordmark"><span class="m">MAFIA</span><span class="vs">vs</span><span class="p">POLICE</span><small>Syndicate wars</small></div>
+    <div class="stats">
+      <div class="stat coins"><div class="label">Деньги</div><div class="value" id="coinsValue">0</div></div>
+      <div class="stat score"><div class="label">Счёт</div><div class="value" id="scoreValue">0</div></div>
+    </div>
+  </div>
+
+  <div class="hand">
+    <div class="slot current"><div class="slot-label">Ставите</div><div class="slot-item" id="curItem"></div><div class="slot-name" id="curName"></div></div>
+    <button class="slot stash empty" id="stashBtn" aria-label="Запас: отложить или достать предмет"><div class="slot-label">Запас</div><div class="slot-item" id="stashItem"></div></button>
+    <div class="slot next"><div class="slot-label">Далее</div><div class="slot-item" id="nextItem"></div></div>
+    <button class="slot shop-slot" id="shopBtn"><div class="slot-label">Магазин</div><div class="slot-item">🛒</div></button>
+  </div>
+
+  <div class="track">
+    <div class="track-label" id="trackLabel">Путь к Дону</div>
+    <div class="track-steps" id="trackSteps"></div>
+  </div>
+
+  <div class="board-wrap" id="boardWrap">
+    <div class="board" id="board"></div>
+  </div>
+
+  <div class="footer-row">
+    <span class="turn-info" id="turnInfo">Ход 0</span>
+    <button class="btn-text" id="menuBtn">В меню</button>
+  </div>
+
+  <!-- Главное меню -->
+  <div class="overlay show" id="menuOverlay">
+    <div class="card">
+      <div class="menu-logo"><span class="m">MAFIA</span><span class="vs">vs</span><span class="p">POLICE</span></div>
+      <div class="menu-sub">Syndicate wars</div>
+      <div class="sides">
+        <button class="side mafia" data-side="mafia"><div class="pic" id="pickMafia"></div><b>Мафия</b><span>От Стрелка до Дона</span></button>
+        <button class="side police" data-side="police"><div class="pic" id="pickPolice"></div><b>Полиция</b><span>От Патрульного до Комиссара</span></button>
+      </div>
+      <div class="rules">
+        <div><b>1</b><span>Ставьте предмет на любую пустую клетку.</span></div>
+        <div><b>2</b><span>Три одинаковых рядом сливаются в один, рангом выше: деньги → чемодан → бойцы.</span></div>
+        <div><b>3</b><span>Враги бродят по полю. Зажмите врага так, чтобы ему некуда было шагнуть, и он сдастся. Улики тоже сливаются.</span></div>
+        <div><b>4</b><span>Поле заполнилось — партия окончена. Главная цель — вырастить босса.</span></div>
+      </div>
+      <div class="record" id="menuRecord"></div>
+    </div>
+  </div>
+
+  <!-- Магазин -->
+  <div class="overlay" id="shopOverlay">
+    <div class="card">
+      <button class="close-btn" id="shopClose" aria-label="Закрыть магазин">✕</button>
+      <h2>Магазин</h2>
+      <p>Купленный предмет сразу попадает в руку.</p>
+      <div class="shop-list" id="shopList"></div>
+    </div>
+  </div>
+
+  <!-- Победа по ходу партии -->
+  <div class="overlay" id="winOverlay">
+    <div class="card">
+      <div class="result-hero" id="winHero"></div>
+      <h2 id="winTitle"></h2>
+      <p id="winText"></p>
+      <button class="btn-primary" id="winContinue">Играть дальше на рекорд</button>
+      <button class="btn-ghost" id="winFinish">Завершить партию</button>
+    </div>
+  </div>
+
+  <!-- Итоги -->
+  <div class="overlay" id="endOverlay">
+    <div class="card">
+      <div class="result-hero" id="endHero"></div>
+      <h2 id="endTitle"></h2>
+      <p id="endText"></p>
+      <div class="result-grid">
+        <div><small>Счёт</small><b id="endScore">0</b></div>
+        <div class="rec"><small>Рекорд</small><b id="endRecord">0</b></div>
+        <div><small>Высший ранг</small><b id="endRank">—</b></div>
+        <div><small>Сдались врагов</small><b id="endCaught">0</b></div>
+      </div>
+      <button class="btn-primary" id="endAgain">Новая партия</button>
+    </div>
+  </div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ================== Конфигурация ================== */
+  const SIZE = 6;
+  const MAX_UNIT = 5;    // 0 деньги, 1 чемодан, 2..5 ранги I..IV
+  const MAX_TROPHY = 2;  // 0 улика, 1 досье, 2 сейф
+  const ROMAN = ['I','II','III','IV'];
+  const RANKS = {
+    mafia:  ['Стрелок','Капо','Авторитет','Дон'],
+    police: ['Патрульный','Детектив','Капитан','Комиссар']
+  };
+  const BOSS = {mafia:'Дону', police:'Комиссару'};
+  const TROPHY_NAMES = ['Улика','Досье','Сейф с компроматом'];
+  const UNIT_POINTS  = [0, 15, 40, 100, 250, 600];
+  const UNIT_COINS   = [0, 2, 5, 10, 20, 50];
+  const TROPHY_POINTS= [0, 60, 200];
+  const TROPHY_COINS = [0, 10, 30];
+
+  /* Портреты, нарисованные в Higgsfield. Ключ: фракция-ранг (0..3).
+     Если картинка не загрузилась, используется векторный портрет. */
+  const SPRITE_URLS = {
+    'mafia-0': 'https://d8j0ntlcm91z4.cloudfront.net/user_3LHEBpyRX9jnTPKBIZommSWizBE/hf_20261027_131529_3e823592-44a4-4ecd-a609-91fa02fd5b58_min.webp',
+    'mafia-1': 'https://d8j0ntlcm91z4.cloudfront.net/user_3LHEBpyRX9jnTPKBIZommSWizBE/hf_20261027_133501_ebe962d2-f76f-44df-ac05-eae769228e1a_min.webp',
+    'mafia-2': 'https://d8j0ntlcm91z4.cloudfront.net/user_3LHEBpyRX9jnTPKBIZommSWizBE/hf_20261027_133835_c6ecfac3-d2c7-4567-b637-5ad3ef23e010_min.webp',
+    'mafia-3': 'https://d8j0ntlcm91z4.cloudfront.net/user_3LHEBpyRX9jnTPKBIZommSWizBE/hf_20261027_133941_54ea6308-2e69-4dbf-b88b-7ccd5747edea_min.webp',
+    'police-0': 'https://d8j0ntlcm91z4.cloudfront.net/user_3LHEBpyRX9jnTPKBIZommSWizBE/hf_20261027_134105_26753c1a-1fdb-4c5c-8550-e317173ceaeb_min.webp',
+    'police-1': 'https://d8j0ntlcm91z4.cloudfront.net/user_3LHEBpyRX9jnTPKBIZommSWizBE/hf_20261027_134206_b1b7cc24-e484-41d0-afe6-438ec7298e80_min.webp',
+    'police-2': 'https://d8j0ntlcm91z4.cloudfront.net/user_3LHEBpyRX9jnTPKBIZommSWizBE/hf_20261027_134421_94a002e0-dc0f-4716-9932-360936a73d97_min.webp',
+    'police-3': 'https://d8j0ntlcm91z4.cloudfront.net/user_3LHEBpyRX9jnTPKBIZommSWizBE/hf_20261027_134512_9305ec26-f23e-4c53-a6c0-e5e68756bb62_min.webp'
+  };
+  const SPRITE_OK = {};
+
+  /* Фоновые арты из Higgsfield. Подключаются, только если загрузились. */
+  const BG_URLS = {
+    menu:  'https://d8j0ntlcm91z4.cloudfront.net/user_3LHEBpyRX9jnTPKBIZommSWizBE/hf_20261027_134654_1b85b9ed-04bf-4f77-ad30-7dcde4f0913b_min.webp',
+    board: 'https://d8j0ntlcm91z4.cloudfront.net/user_3LHEBpyRX9jnTPKBIZommSWizBE/hf_20261027_134803_246581bb-1518-4ab4-9ba9-65fcd5ff97e0_min.webp'
+  };
+
+  const SHOP = [
+    {kind:'joker', price:60, name:'Джокер', desc:'Превращается в то, что даст слияние на этой клетке.'},
+    {kind:'raid',  price:35, name:'Облава', desc:'Убирает любой предмет или врага с поля.'},
+    {kind:'unit', level:1, price:25, name:'Чемодан денег', desc:'Сразу второй уровень цепочки.'}
+  ];
+
+  const BEST_KEY = 'mvp-syndicate-best';
+
+  /* ================== Состояние ================== */
+  const S = {
+    faction:'mafia', enemy:'police',
+    board:[], current:null, next:null, stash:null,
+    score:0, coins:0, turn:0, caught:0, bestLevel:0,
+    busy:false, over:true, wonShown:false, pendingWin:false
+  };
+
+  /* ================== DOM ================== */
+  const $ = id => document.getElementById(id);
+  const boardEl = $('board'), boardWrap = $('boardWrap');
+  let cellEls = [];
+
+  /* ================== Утилиты ================== */
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  const rnd = arr => arr[Math.floor(Math.random()*arr.length)];
+  const inside = (r,c) => r>=0 && r<SIZE && c>=0 && c<SIZE;
+  const nbrs = (r,c) => [[r-1,c],[r+1,c],[r,c-1],[r,c+1]].filter(([a,b])=>inside(a,b));
+  function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+  /* Рекорд: локально + в облаке Telegram (CloudStorage), чтобы он переезжал между устройствами */
+  let cachedBest = 0;
+  try{ cachedBest = parseInt(localStorage.getItem(BEST_KEY)||'0',10)||0; }catch(e){}
+  function tgCloud(){ try{ const tg=window.Telegram&&window.Telegram.WebApp; return tg && tg.initData && tg.CloudStorage ? tg.CloudStorage : null; }catch(e){ return null; } }
+  function syncBestFromCloud(){
+    const cs = tgCloud(); if(!cs) return;
+    try{ cs.getItem(BEST_KEY, (err, val)=>{ const v=parseInt(val||'0',10)||0; if(!err && v>cachedBest){ cachedBest=v; try{localStorage.setItem(BEST_KEY,String(v));}catch(e){} renderMenuPicks(); } }); }catch(e){}
+  }
+  function readBest(){ return cachedBest; }
+  function writeBest(v){
+    cachedBest = v;
+    try{ localStorage.setItem(BEST_KEY, String(v)); }catch(e){}
+    const cs = tgCloud(); if(cs){ try{ cs.setItem(BEST_KEY, String(v)); }catch(e){} }
+  }
+  function haptic(kind){
+    try{
+      const h = window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.HapticFeedback;
+      if(!h) return;
+      if(kind==='success') h.notificationOccurred('success'); else h.impactOccurred(kind);
+    }catch(e){}
+  }
+
+  /* ================== Графика ================== */
+  function characterSVG(faction, tier){
+    const isM = faction === 'mafia';
+    const skin = '#EAB98C', skinSh = '#CF9A6C', hair = tier===3 ? '#C9CDD2' : '#3A2A20';
+    const body = isM ? ['#8B1E2E','#2B2D35','#1F2026','#F1EDE4'][tier] : ['#235A9C','#9C7C52','#16365F','#F1EDE4'][tier];
+    const shirt = isM ? ['#2A1A1A','#EDE8DE','#1A1A1E','#1A1A1E'][tier] : ['#D6E2F0','#EDE8DE','#D6E2F0','#16365F'][tier];
+    let s = '<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">';
+    // плечи и одежда
+    s += '<path d="M7 66 C9 50 20 45 32 45 C44 45 55 50 57 66Z" fill="'+body+'"/>';
+    s += '<path d="M25 46 L32 58 L39 46Z" fill="'+shirt+'"/>';
+    if(isM && tier===1) s += '<path d="M31 49 L33 49 L34 60 L32 62 L30 60Z" fill="#8B1538"/>';
+    if(isM && tier===2) s += '<path d="M22 50 Q32 60 42 50" stroke="#E2BE45" stroke-width="2.2" fill="none"/>';
+    if(isM && tier===3) s += '<circle cx="44" cy="53" r="3.2" fill="#C8203A"/><path d="M30 47 L32 51 L34 47Z" fill="#1A1A1E"/>';
+    if(!isM && tier===0) s += '<path d="M40 52 l4 -2 l4 2 l-1 5 l-3 2 l-3 -2z" fill="#C9A227"/>';
+    if(!isM && tier===1) s += '<path d="M22 47 L28 58 L26 47Z" fill="#7C6140"/><path d="M42 47 L36 58 L38 47Z" fill="#7C6140"/>';
+    if(!isM && tier===2) s += '<rect x="9" y="49" width="10" height="3" rx="1.5" fill="#C9A227"/><rect x="45" y="49" width="10" height="3" rx="1.5" fill="#C9A227"/>';
+    if(!isM && tier===3) s += '<circle cx="21" cy="55" r="2.6" fill="#C9A227"/><circle cx="27" cy="57" r="2.6" fill="#D9D9D9"/><circle cx="43" cy="55" r="2.6" fill="#C8203A"/>';
+    // шея и голова
+    s += '<rect x="28" y="39" width="8" height="8" fill="'+skinSh+'"/>';
+    s += '<circle cx="20" cy="31" r="2.8" fill="'+skinSh+'"/><circle cx="44" cy="31" r="2.8" fill="'+skinSh+'"/>';
+    s += '<ellipse cx="32" cy="30" rx="12" ry="13" fill="'+skin+'"/>';
+    if(tier===3) s += '<path d="M20 26 Q22 16 32 16 Q42 16 44 26 Q40 21 32 21 Q24 21 20 26Z" fill="'+hair+'"/>';
+    // глаза и брови
+    if(isM && (tier===1)){
+      s += '<rect x="22" y="27" width="8" height="5" rx="2.5" fill="#1B1B1F"/><rect x="34" y="27" width="8" height="5" rx="2.5" fill="#1B1B1F"/><rect x="29" y="28.5" width="6" height="1.5" fill="#1B1B1F"/>';
+    } else {
+      s += '<path d="M23 25 l6 1.2" stroke="#2A1A12" stroke-width="1.8" stroke-linecap="round"/><path d="M41 25 l-6 1.2" stroke="#2A1A12" stroke-width="1.8" stroke-linecap="round"/>';
+      s += '<circle cx="26.5" cy="30" r="1.8" fill="#2A1A12"/><circle cx="37.5" cy="30" r="1.8" fill="#2A1A12"/>';
+    }
+    // рот, усы, детали
+    if((isM && tier===1) || (!isM && tier===2)) s += '<path d="M26 35.5 Q32 33.5 38 35.5 Q32 37 26 35.5Z" fill="#3A2A20"/>';
+    if(!isM && tier===3) s += '<path d="M26 35.5 Q32 34 38 35.5 Q32 37 26 35.5Z" fill="#C9CDD2"/>';
+    s += (isM && tier===0) ? '<path d="M28 37 Q33 39 37 36" stroke="#7A3A2A" stroke-width="1.6" fill="none" stroke-linecap="round"/>'
+                           : '<path d="M28 38 Q32 40 36 38" stroke="#7A3A2A" stroke-width="1.6" fill="none" stroke-linecap="round"/>';
+    if(isM && tier===0) s += '<path d="M23 36 Q32 43 41 36" stroke="#9C7A5A" stroke-width="1" stroke-dasharray="1 1.5" fill="none"/>';
+    if(isM && tier===2) s += '<rect x="36" y="36" width="11" height="3.2" rx="1.6" fill="#5A3A22"/><circle cx="47" cy="37.6" r="1.6" fill="#E8692A"/>';
+    // головные уборы
+    if(isM){
+      if(tier===0){
+        s += '<path d="M19 22 Q20 12 32 12 Q44 12 45 22Z" fill="#5A5248"/><path d="M38 21 Q50 20 51 24 Q44 25 38 24Z" fill="#4A433B"/>';
+      } else if(tier===1 || tier===2){
+        s += '<ellipse cx="32" cy="20" rx="20" ry="4.5" fill="#15161A"/><path d="M21 20 Q21 8 32 8 Q43 8 43 20Z" fill="#1E1F25"/>';
+        s += '<rect x="21" y="16" width="22" height="3" fill="'+(tier===2?'#C9A227':'#5A0F27')+'"/>';
+      }
+    } else {
+      if(tier===0){
+        s += '<path d="M19 21 Q19 11 32 11 Q45 11 45 21Z" fill="#1B3F70"/><rect x="18" y="19" width="28" height="4" rx="2" fill="#10294A"/><circle cx="32" cy="15" r="2.6" fill="#C9A227"/>';
+      } else if(tier===1){
+        s += '<ellipse cx="32" cy="20" rx="19" ry="4.2" fill="#6B5233"/><path d="M22 20 Q22 9 32 9 Q42 9 42 20Z" fill="#7E6240"/><rect x="22" y="16" width="20" height="2.6" fill="#4A3820"/>';
+      } else {
+        const capTop = tier===3 ? '#F1EDE4' : '#16365F';
+        s += '<path d="M16 18 Q32 6 48 18 L46 21 L18 21Z" fill="'+capTop+'"/><rect x="18" y="19" width="28" height="4" fill="#0E2440"/>';
+        s += '<rect x="18" y="19" width="28" height="1.6" fill="#C9A227"/><path d="M20 23 Q32 28 44 23" fill="#0E2440"/>';
+        s += tier===3 ? '<polygon points="32,10 33.6,14 38,14 34.5,16.4 35.8,20 32,17.8 28.2,20 29.5,16.4 26,14 30.4,14" fill="#C9A227"/>'
+                      : '<circle cx="32" cy="14" r="2.8" fill="#C9A227"/>';
+      }
+    }
+    return s + '</svg>';
+  }
+
+  const ITEM_SVG = {
+    money: '<svg viewBox="0 0 64 64"><rect x="12" y="36" width="40" height="13" rx="2" fill="#2E7D4F" stroke="#16452A" stroke-width="2"/><rect x="14" y="27" width="40" height="13" rx="2" fill="#3A9A62" stroke="#16452A" stroke-width="2"/><rect x="10" y="18" width="40" height="13" rx="2" fill="#4DB878" stroke="#16452A" stroke-width="2"/><rect x="26" y="18" width="8" height="13" fill="#E8D9A0"/><circle cx="17" cy="24.5" r="2.6" fill="#2E7D4F"/><circle cx="43" cy="24.5" r="2.6" fill="#2E7D4F"/></svg>',
+    case: '<svg viewBox="0 0 64 64"><rect x="24" y="11" width="16" height="9" rx="3" fill="none" stroke="#3B2A1A" stroke-width="3"/><rect x="7" y="19" width="50" height="33" rx="5" fill="#7A4E27" stroke="#3B2A1A" stroke-width="2"/><rect x="7" y="30" width="50" height="4" fill="#3B2A1A"/><rect x="28" y="27" width="8" height="9" rx="1.5" fill="#C9A227"/><rect x="12" y="38" width="15" height="9" rx="1" fill="#4DB878" stroke="#16452A"/><rect x="37" y="38" width="15" height="9" rx="1" fill="#4DB878" stroke="#16452A"/></svg>',
+    trophy0: '<svg viewBox="0 0 64 64"><rect x="14" y="9" width="36" height="46" rx="3" fill="#E3DDCB" stroke="#8A826E" stroke-width="2"/><rect x="14" y="9" width="36" height="7" fill="#B23A3A"/><circle cx="32" cy="35" r="10" fill="none" stroke="#5A5346" stroke-width="2"/><circle cx="32" cy="35" r="6" fill="none" stroke="#5A5346" stroke-width="2"/><circle cx="32" cy="35" r="2" fill="#5A5346"/></svg>',
+    trophy1: '<svg viewBox="0 0 64 64"><path d="M7 17 h18 l4 5 h28 v30 a3 3 0 0 1 -3 3 h-44 a3 3 0 0 1 -3 -3z" fill="#C9A162" stroke="#7A5C2E" stroke-width="2"/><g transform="rotate(-9 32 38)"><rect x="13" y="32" width="38" height="11" rx="1.5" fill="none" stroke="#B23A3A" stroke-width="2"/><text x="32" y="40.5" text-anchor="middle" font-family="Inter,sans-serif" font-weight="800" font-size="7.5" fill="#B23A3A">СЕКРЕТНО</text></g></svg>',
+    trophy2: '<svg viewBox="0 0 64 64"><rect x="9" y="9" width="46" height="46" rx="4" fill="#59616D" stroke="#2C3138" stroke-width="2"/><rect x="14" y="14" width="36" height="36" rx="2" fill="#737D8A"/><circle cx="32" cy="32" r="10" fill="#2C3138"/><circle cx="32" cy="32" r="6.5" fill="#C9A227"/><rect x="31" y="24" width="2" height="5" fill="#2C3138"/><rect x="44" y="27" width="3" height="10" rx="1.5" fill="#2C3138"/></svg>',
+    joker: '<svg viewBox="0 0 64 64"><rect x="15" y="7" width="34" height="50" rx="5" fill="#F3EBD3" stroke="#C9A227" stroke-width="3"/><polygon points="32,18 35.6,28 46,28 37.6,34.2 40.8,44.5 32,38.3 23.2,44.5 26.4,34.2 18,28 28.4,28" fill="#C9A227"/></svg>',
+    raid: '<svg viewBox="0 0 64 64"><rect x="13" y="45" width="38" height="9" rx="2" fill="#2C3138"/><path d="M18 45 v-13 a14 14 0 0 1 28 0 v13z" fill="#D23B3B"/><path d="M24 31 a8 8 0 0 1 8 -8" stroke="#FFD3D3" stroke-width="3" fill="none" stroke-linecap="round"/><g stroke="#E2BE45" stroke-width="3" stroke-linecap="round"><line x1="32" y1="5" x2="32" y2="11"/><line x1="12" y1="14" x2="16" y2="18"/><line x1="52" y1="14" x2="48" y2="18"/></g></svg>'
+  };
+
+  function portraitHTML(faction, rank){
+    const key = faction + '-' + rank;
+    if(SPRITE_OK[key]) return '<div class="face"><img src="'+SPRITE_URLS[key]+'" alt="" draggable="false"></div>';
+    return '<div class="face">'+characterSVG(faction, rank)+'</div>';
+  }
+
+  function itemName(it){
+    if(!it) return '';
+    if(it.kind==='unit') return it.level===0 ? 'Пачка денег' : it.level===1 ? 'Чемодан денег' : RANKS[S.faction][it.level-2];
+    if(it.kind==='enemy') return 'Враг: ' + RANKS[S.enemy][0];
+    if(it.kind==='trophy') return TROPHY_NAMES[it.level];
+    if(it.kind==='joker') return 'Джокер';
+    if(it.kind==='raid') return 'Облава';
+    return '';
+  }
+
+  function makeTile(it, factionOverride){
+    const t = document.createElement('div');
+    const fac = factionOverride || S.faction;
+    if(it.kind==='unit' && it.level>=2){
+      const r = it.level-2;
+      t.className = 'tile portrait '+fac+' tier-'+r;
+      t.innerHTML = portraitHTML(fac, r) + '<span class="rank">'+ROMAN[r]+'</span>';
+    } else if(it.kind==='enemy'){
+      t.className = 'tile portrait enemy '+S.enemy;
+      t.innerHTML = portraitHTML(S.enemy, 0) + '<span class="enemy-mark">!</span>';
+    } else {
+      t.className = 'tile item';
+      const key = it.kind==='unit' ? (it.level===0?'money':'case') : it.kind==='trophy' ? 'trophy'+it.level : it.kind;
+      t.innerHTML = ITEM_SVG[key];
+    }
+    t.setAttribute('aria-label', itemName(it));
+    return t;
+  }
+
+  function preloadSprites(){
+    Object.keys(SPRITE_URLS).forEach(key=>{
+      const img = new Image();
+      img.onload = ()=>{ SPRITE_OK[key] = true; renderAll(); renderMenuPicks(); };
+      img.src = SPRITE_URLS[key];
+    });
+    if(BG_URLS.menu){
+      const m = new Image();
+      m.onload = ()=>{ const o=$('menuOverlay'); o.style.setProperty('--menu-art','url("'+BG_URLS.menu+'")'); o.classList.add('has-art'); };
+      m.src = BG_URLS.menu;
+    }
+    if(BG_URLS.board){
+      const b = new Image();
+      b.onload = ()=>{ boardEl.style.setProperty('--board-art','url("'+BG_URLS.board+'")'); boardEl.classList.add('has-art'); };
+      b.src = BG_URLS.board;
+    }
+  }
+
+  /* ================== Поле ================== */
+  function buildBoard(){
+    boardEl.innerHTML = ''; cellEls = [];
+    for(let r=0;r<SIZE;r++){
+      const row = [];
+      for(let c=0;c<SIZE;c++){
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+        cell.addEventListener('click', ()=>onCellTap(r,c));
+        boardEl.appendChild(cell); row.push(cell);
+      }
+      cellEls.push(row);
+    }
+  }
+  const emptyBoard = () => Array.from({length:SIZE}, ()=>new Array(SIZE).fill(null));
+  function empties(){ const out=[]; for(let r=0;r<SIZE;r++) for(let c=0;c<SIZE;c++) if(!S.board[r][c]) out.push([r,c]); return out; }
+  const sameKind = (a,b) => a && b && a.kind===b.kind && a.level===b.level && (a.kind==='unit'||a.kind==='trophy');
+
+  function flood(r,c){
+    const start = S.board[r][c]; const seen = new Set([r+','+c]); const out=[[r,c]]; const stack=[[r,c]];
+    while(stack.length){
+      const [a,b] = stack.pop();
+      for(const [x,y] of nbrs(a,b)){
+        const k=x+','+y;
+        if(!seen.has(k) && sameKind(S.board[x][y], start)){ seen.add(k); out.push([x,y]); stack.push([x,y]); }
+      }
+    }
+    return out;
+  }
+  function wouldMerge(r,c,it){
+    if(S.board[r][c] || !(it.kind==='unit'||it.kind==='trophy')) return false;
+    const max = it.kind==='unit'?MAX_UNIT:MAX_TROPHY;
+    if(it.level>=max) return false;
+    S.board[r][c] = it; const n = flood(r,c).length; S.board[r][c] = null;
+    return n>=3;
+  }
+  function resolveJoker(r,c){
+    const cands = [];
+    for(const [x,y] of nbrs(r,c)){ const it=S.board[x][y]; if(it && (it.kind==='unit'||it.kind==='trophy')) cands.push({kind:it.kind, level:it.level}); }
+    cands.sort((a,b)=> (b.kind==='unit') - (a.kind==='unit') || b.level-a.level);
+    for(const cand of cands) if(wouldMerge(r,c,cand)) return cand;
+    return {kind:'unit', level:0};
+  }
+
+  /* ================== Генерация предметов ================== */
+  function randomItem(){
+    const enemyChance = 0.12 + Math.min(0.08, S.turn*0.0012);
+    const x = Math.random();
+    if(x < enemyChance) return {kind:'enemy'};
+    if(x < enemyChance+0.03) return {kind:'joker'};
+    if(x < enemyChance+0.045) return {kind:'raid'};
+    const y = Math.random();
+    if(y < 0.72) return {kind:'unit', level:0};
+    if(y < 0.92) return {kind:'unit', level:1};
+    return {kind:'unit', level:2};
+  }
+  function advanceQueue(){ S.current = S.next; S.next = randomItem(); }
+
+  /* ================== Рендер ================== */
+  function renderBoard(freshCells, levelUpCell){
+    for(let r=0;r<SIZE;r++) for(let c=0;c<SIZE;c++){
+      const cell = cellEls[r][c]; cell.innerHTML=''; cell.classList.remove('hint','raid-target');
+      const it = S.board[r][c];
+      if(it){
+        const t = makeTile(it);
+        if(levelUpCell && levelUpCell[0]===r && levelUpCell[1]===c) t.classList.add('level-up');
+        else if(freshCells && freshCells.some(([a,b])=>a===r&&b===c)) t.classList.add('pop');
+        cell.appendChild(t);
+      }
+    }
+    if(!S.over && !S.busy && S.current){
+      for(let r=0;r<SIZE;r++) for(let c=0;c<SIZE;c++){
+        if(S.current.kind==='raid'){ if(S.board[r][c]) cellEls[r][c].classList.add('raid-target'); }
+        else if(!S.board[r][c]){
+          const probe = S.current.kind==='joker' ? resolveJoker(r,c) : S.current;
+          if(wouldMerge(r,c,probe)) cellEls[r][c].classList.add('hint');
+        }
+      }
+    }
+  }
+  function putIn(el, it){ el.innerHTML=''; if(it) el.appendChild(makeTile(it)); }
+  function renderHand(){
+    putIn($('curItem'), S.current); $('curName').textContent = itemName(S.current);
+    putIn($('stashItem'), S.stash); $('stashBtn').classList.toggle('empty', !S.stash);
+    putIn($('nextItem'), S.next);
+    $('scoreValue').textContent = S.score; $('coinsValue').textContent = S.coins;
+    $('turnInfo').textContent = 'Ход ' + S.turn + ' · свободно ' + empties().length;
+  }
+  function renderTrack(){
+    const wrap = $('trackSteps'); wrap.innerHTML='';
+    for(let l=0;l<=MAX_UNIT;l++){
+      if(l>0){ const sep=document.createElement('div'); sep.className='track-sep'+(S.bestLevel>=l?' done':''); wrap.appendChild(sep); }
+      const st = document.createElement('div'); st.className='track-step'+(S.bestLevel>=l?' done':'');
+      st.title = itemName({kind:'unit', level:l});
+      st.appendChild(makeTile({kind:'unit', level:l})); wrap.appendChild(st);
+    }
+    $('trackLabel').textContent = 'Путь к ' + BOSS[S.faction];
+  }
+  function renderAll(fresh, levelUp){ if(!S.board.length) return; renderBoard(fresh, levelUp); renderHand(); renderTrack(); }
+
+  function floatText(r,c,text,color,dy){
+    const cr = cellEls[r][c].getBoundingClientRect(), wr = boardWrap.getBoundingClientRect();
+    const el = document.createElement('div'); el.className='float-text'; el.textContent=text; el.style.color=color;
+    el.style.left = (cr.left-wr.left+cr.width/2)+'px'; el.style.top=(cr.top-wr.top+(dy||0))+'px';
+    boardWrap.appendChild(el); el.addEventListener('animationend', ()=>el.remove());
+  }
+  function toast(text){
+    const el=document.createElement('div'); el.className='toast'; el.textContent=text;
+    boardWrap.appendChild(el); el.addEventListener('animationend', ()=>el.remove());
+  }
+  function deny(r,c){ const el=cellEls[r][c]; el.classList.remove('deny'); void el.offsetWidth; el.classList.add('deny'); haptic('light'); }
+
+  /* ================== Ход игрока ================== */
+  async function onCellTap(r,c){
+    if(S.busy || S.over) return;
+    const cur = S.current, cell = S.board[r][c];
+
+    if(cur.kind==='raid'){
+      if(!cell){ deny(r,c); return; }
+      S.busy = true;
+      const t = cellEls[r][c].querySelector('.tile'); if(t) t.classList.add('removed');
+      await wait(250);
+      if(cell.kind==='enemy'){ S.coins += 5; floatText(r,c,'+5 💰','#7FD39B'); }
+      S.board[r][c] = null; S.turn++;
+      advanceQueue(); renderAll();
+      await enemyTurn(null);
+      finishTurn(); return;
+    }
+    if(cell){ deny(r,c); return; }
+
+    S.busy = true;
+    const placed = cur.kind==='joker' ? resolveJoker(r,c) : {kind:cur.kind, level:cur.level};
+    S.board[r][c] = placed; S.turn++; S.score += 1;
+    if(placed.kind==='unit') S.bestLevel = Math.max(S.bestLevel, placed.level);
+    advanceQueue();
+    renderAll([[r,c]]);
+    haptic('light');
+    await wait(140);
+    if(placed.kind==='unit') await resolveMerges(r,c);
+    await enemyTurn(placed.kind==='enemy' ? [r,c] : null);
+    finishTurn();
+  }
+
+  async function resolveMerges(r,c){
+    while(true){
+      const it = S.board[r][c];
+      if(!it || !(it.kind==='unit'||it.kind==='trophy')) break;
+      const max = it.kind==='unit'?MAX_UNIT:MAX_TROPHY;
+      if(it.level>=max) break;
+      const group = flood(r,c);
+      if(group.length<3) break;
+
+      const others = group.filter(([a,b])=>!(a===r&&b===c));
+      const tr = cellEls[r][c].getBoundingClientRect();
+      for(const [a,b] of others){
+        const t = cellEls[a][b].querySelector('.tile'); if(!t) continue;
+        const rr = t.getBoundingClientRect();
+        t.style.setProperty('--dx', (tr.left+tr.width/2-(rr.left+rr.width/2))+'px');
+        t.style.setProperty('--dy', (tr.top+tr.height/2-(rr.top+rr.height/2))+'px');
+        t.classList.add('merge-fly');
+      }
+      await wait(230);
+      for(const [a,b] of others) S.board[a][b] = null;
+
+      const nl = it.level+1;
+      S.board[r][c] = {kind:it.kind, level:nl};
+      const bonus = group.length-2;
+      const pts = (it.kind==='unit'?UNIT_POINTS[nl]:TROPHY_POINTS[nl]) * bonus;
+      const coins = it.kind==='unit'?UNIT_COINS[nl]:TROPHY_COINS[nl];
+      S.score += pts; S.coins += coins;
+      if(it.kind==='unit'){
+        const firstTime = nl > S.bestLevel;
+        S.bestLevel = Math.max(S.bestLevel, nl);
+        if(firstTime && nl>=2) toast('Новый ранг: ' + RANKS[S.faction][nl-2]);
+        if(nl===MAX_UNIT && !S.wonShown) S.pendingWin = true;
+      }
+      renderAll(null, [r,c]);
+      floatText(r,c,'+'+pts,'#C9A227');
+      floatText(r,c,'+'+coins+' 💰','#7FD39B',18);
+      haptic(nl>=4?'heavy':'medium');
+      await wait(260);
+    }
+  }
+
+  /* ================== Ход врагов ================== */
+  async function enemyTurn(skip){
+    const list = [];
+    for(let r=0;r<SIZE;r++) for(let c=0;c<SIZE;c++)
+      if(S.board[r][c] && S.board[r][c].kind==='enemy' && !(skip && skip[0]===r && skip[1]===c)) list.push([r,c]);
+    shuffle(list);
+    const moves = [];
+    for(const [r,c] of list){
+      const free = nbrs(r,c).filter(([a,b])=>!S.board[a][b]);
+      if(!free.length) continue;
+      const [a,b] = rnd(free);
+      S.board[a][b] = S.board[r][c]; S.board[r][c] = null;
+      moves.push({from:[r,c], to:[a,b]});
+    }
+    if(moves.length){
+      renderAll();
+      for(const m of moves){
+        const t = cellEls[m.to[0]][m.to[1]].querySelector('.tile'); if(!t) continue;
+        const f = cellEls[m.from[0]][m.from[1]].getBoundingClientRect(), to = cellEls[m.to[0]][m.to[1]].getBoundingClientRect();
+        t.style.transform = 'translate('+(f.left-to.left)+'px,'+(f.top-to.top)+'px)';
+        void t.offsetWidth;
+        t.style.transition = 'transform .2s ease-out';
+        t.style.transform = '';
+      }
+      await wait(220);
+    }
+
+    // Враг, которому некуда шагнуть, сдаётся и становится уликой
+    const trapped = [];
+    for(let r=0;r<SIZE;r++) for(let c=0;c<SIZE;c++){
+      const it = S.board[r][c];
+      if(it && it.kind==='enemy' && nbrs(r,c).every(([a,b])=>S.board[a][b])) trapped.push([r,c]);
+    }
+    if(!trapped.length) return;
+    for(const [r,c] of trapped){ const t=cellEls[r][c].querySelector('.tile'); if(t) t.classList.add('captured'); }
+    await wait(420);
+    for(const [r,c] of trapped){ S.board[r][c] = {kind:'trophy', level:0}; S.score += 15; S.coins += 3; S.caught++; }
+    renderAll(trapped);
+    for(const [r,c] of trapped){ floatText(r,c,'Сдался!','#E8E4DA'); }
+    haptic('medium');
+    await wait(300);
+    for(const [r,c] of trapped){ if(S.board[r][c] && S.board[r][c].kind==='trophy') await resolveMerges(r,c); }
+  }
+
+  function finishTurn(){
+    S.busy = false;
+    renderAll();
+    if(S.pendingWin){ S.pendingWin=false; S.wonShown=true; showWin(); return; }
+    if(empties().length===0 && S.current.kind!=='raid') endGame();
+  }
+
+  /* ================== Запас и магазин ================== */
+  $('stashBtn').addEventListener('click', ()=>{
+    if(S.busy || S.over) return;
+    if(!S.stash){ S.stash = S.current; advanceQueue(); }
+    else { const t=S.stash; S.stash=S.current; S.current=t; }
+    haptic('light'); renderAll();
+  });
+
+  function buildShop(){
+    const list = $('shopList'); list.innerHTML='';
+    SHOP.forEach(item=>{
+      const row = document.createElement('div'); row.className='shop-row';
+      const pic = document.createElement('div'); pic.className='slot-item';
+      pic.appendChild(makeTile(item.kind==='unit'?{kind:'unit',level:item.level}:{kind:item.kind}));
+      const info = document.createElement('div'); info.className='shop-info';
+      info.innerHTML = '<div class="shop-name">'+item.name+'</div><div class="shop-desc">'+item.desc+'</div>';
+      const btn = document.createElement('button'); btn.className='shop-buy'; btn.textContent = item.price+' 💰';
+      btn.disabled = S.coins < item.price || S.busy || S.over;
+      btn.addEventListener('click', ()=>{
+        if(S.coins < item.price || S.busy || S.over) return;
+        S.coins -= item.price;
+        S.next = S.current;
+        S.current = item.kind==='unit' ? {kind:'unit', level:item.level} : {kind:item.kind};
+        $('shopOverlay').classList.remove('show');
+        haptic('success'); renderAll();
+      });
+      row.appendChild(pic); row.appendChild(info); row.appendChild(btn); list.appendChild(row);
+    });
+  }
+  $('shopBtn').addEventListener('click', ()=>{ if(S.over) return; buildShop(); $('shopOverlay').classList.add('show'); });
+  $('shopClose').addEventListener('click', ()=>$('shopOverlay').classList.remove('show'));
+
+  /* ================== Победа и итоги ================== */
+  function heroTile(){ const lvl = Math.max(0, S.bestLevel); return makeTile({kind:'unit', level:lvl}); }
+
+  function showWin(){
+    putIn($('winHero'), {kind:'unit', level:MAX_UNIT});
+    const t = $('winTitle'); t.className = S.faction;
+    t.textContent = S.faction==='mafia' ? 'Дон в игре. Город ваш' : 'Комиссар на посту. Город спасён';
+    $('winText').textContent = 'Вы вырастили босса за ' + S.turn + ' ходов. Можно играть дальше и набирать очки, пока поле не заполнится.';
+    $('winOverlay').classList.add('show');
+    haptic('success');
+  }
+  $('winContinue').addEventListener('click', ()=>$('winOverlay').classList.remove('show'));
+  $('winFinish').addEventListener('click', ()=>{ $('winOverlay').classList.remove('show'); endGame(); });
+
+  function endGame(){
+    S.over = true;
+    const best = readBest(); const isRecord = S.score > best;
+    if(isRecord) writeBest(S.score);
+    const won = S.bestLevel >= MAX_UNIT;
+    const t = $('endTitle'); t.className = won ? S.faction : '';
+    if(won) t.textContent = S.faction==='mafia' ? 'Город под контролем мафии' : 'Город под защитой полиции';
+    else t.textContent = 'Поле заполнено';
+    const rankName = itemName({kind:'unit', level:S.bestLevel});
+    $('endText').textContent = won
+      ? (isRecord ? 'Босс выращен, и это новый рекорд.' : 'Босс выращен. Попробуйте побить рекорд.')
+      : 'Свободных клеток не осталось. Вы дошли до ранга «' + rankName + '». До босса не хватило ' + (MAX_UNIT - S.bestLevel) + ' шаг(а).';
+    $('endScore').textContent = S.score;
+    $('endRecord').textContent = Math.max(best, S.score);
+    $('endRank').textContent = rankName;
+    $('endCaught').textContent = S.caught;
+    $('endHero').innerHTML=''; $('endHero').appendChild(heroTile());
+    $('endOverlay').classList.add('show');
+    renderAll();
+    haptic(won?'success':'heavy');
+  }
+  $('endAgain').addEventListener('click', ()=>{ $('endOverlay').classList.remove('show'); showMenu(); });
+
+  /* ================== Меню и старт ================== */
+  function renderMenuPicks(){
+    const pm = $('pickMafia'), pp = $('pickPolice');
+    pm.innerHTML=''; pp.innerHTML='';
+    pm.appendChild(makeTile({kind:'unit', level:2}, 'mafia'));
+    pp.appendChild(makeTile({kind:'unit', level:2}, 'police'));
+    const best = readBest();
+    $('menuRecord').textContent = best ? ('Ваш рекорд: ' + best) : 'Выберите сторону, чтобы начать';
+  }
+  function showMenu(){ S.over = true; renderMenuPicks(); $('menuOverlay').classList.add('show'); if(window.__tgBack) window.__tgBack(false); }
+  $('menuBtn').addEventListener('click', ()=>{ if(S.busy) return; showMenu(); });
+
+  document.querySelectorAll('.side').forEach(btn=>btn.addEventListener('click', ()=>startGame(btn.dataset.side)));
+
+  function startGame(side){
+    S.faction = side; S.enemy = side==='mafia' ? 'police' : 'mafia';
+    S.board = emptyBoard();
+    S.score = 0; S.coins = 30; S.turn = 0; S.caught = 0; S.bestLevel = 0;
+    S.stash = null; S.busy = false; S.over = false; S.wonShown = false; S.pendingWin = false;
+    // Стартовая расстановка без готовых троек
+    const starters = [{kind:'unit',level:0},{kind:'unit',level:0},{kind:'unit',level:1},{kind:'unit',level:0},{kind:'enemy'}];
+    for(const it of starters){
+      for(let tries=0; tries<40; tries++){
+        const [r,c] = rnd(empties());
+        S.board[r][c] = {...it};
+        if(it.kind==='enemy' || flood(r,c).length<3) break;
+        S.board[r][c] = null;
+      }
+    }
+    S.current = {kind:'unit', level:0}; S.next = randomItem();
+    if(S.next.kind!=='unit') S.next = {kind:'unit', level:0};
+    $('menuOverlay').classList.remove('show');
+    if(window.__tgBack) window.__tgBack(true);
+    renderAll();
+    for(let r=0;r<SIZE;r++) for(let c=0;c<SIZE;c++){ const t=cellEls[r][c].querySelector('.tile'); if(t) t.classList.add('pop'); }
+  }
+
+  /* ================== Telegram Mini App ================== */
+  try{
+    if(window.Telegram && window.Telegram.WebApp){
+      const tg = window.Telegram.WebApp; tg.ready(); tg.expand();
+      if(tg.setHeaderColor) tg.setHeaderColor('#14151A');
+      if(tg.setBackgroundColor) tg.setBackgroundColor('#14151A');
+      // чтобы свайп по полю не сворачивал мини-приложение
+      if(tg.disableVerticalSwipes) tg.disableVerticalSwipes();
+      // кнопка «Назад» Telegram возвращает в меню из партии
+      if(tg.BackButton){
+        tg.BackButton.onClick(()=>{
+          if($('shopOverlay').classList.contains('show')){ $('shopOverlay').classList.remove('show'); return; }
+          if(!S.busy) showMenu();
+        });
+      }
+      window.__tgBack = on => { try{ on ? tg.BackButton.show() : tg.BackButton.hide(); }catch(e){} };
+    }
+  }catch(e){}
+
+  /* Отладочный доступ для автотестов */
+  window.__sw = {S, startGame, onCellTap, resolveMerges, enemyTurn, renderAll, endGame, showWin, empties};
+
+  buildBoard();
+  renderMenuPicks();
+  preloadSprites();
+  syncBestFromCloud();
+})();
+</script>
+</body>
+</html>
